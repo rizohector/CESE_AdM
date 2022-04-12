@@ -34,10 +34,16 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+typedef enum
+{
+    TECLA,
+    LED
+} tecla_led_state_t;
+
 #define LED_RATE_MS 1000
 
-#define KEYS_INVALID_TIME	-1
-#define DEBOUNCE_TIME_MS	40
+#define KEYS_INVALID_TIME   -1
+#define DEBOUNCE_TIME_MS   40
 
 typedef enum
 {
@@ -57,8 +63,6 @@ typedef struct
 } t_key_data;
 
 t_key_data keys_data;
-
-SemaphoreHandle_t sem_btn;
 
 /* USER CODE END PD */
 
@@ -86,13 +90,14 @@ void StartDefaultTask(void const * argument);
 /* USER CODE BEGIN PFP */
 void vPrintString( const char *pcString );
 
-TickType_t keys_get_diff( void );
-void keys_clear_diff( void );
+TickType_t get_diff( void );
+void clear_diff( void );
 
 // Prototipo de funcion de la tarea
-void tarea_led( void* taskParmPtr ); // Prendo LED ... Apago LED ...
-void keys_service_task( void* taskParmPtr );
-void producto (uint32_t * vectorIN,uint32_t * vectorOUT, uint32_t longitud, uint32_t escalar);
+void productoEscalar32 (uint32_t * vectorIn, uint32_t *vectorOut, uint32_t longitud, uint32_t escalar);
+void task_tecla_led( void* taskParmPtr );
+
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -104,13 +109,13 @@ void vPrintString( const char *pcString )
 	exclusion. */
 	taskENTER_CRITICAL();
 
-		HAL_UART_Transmit( &huart3, (uint8_t *)pcString, (uint16_t) strlen((char *)pcString), 10 );
+		HAL_UART_Transmit(&huart3, (uint8_t *)pcString, (uint16_t) strlen((char *)pcString), 10);
 
 	taskEXIT_CRITICAL();
 }
 
 
-TickType_t keys_get_diff( void )
+TickType_t get_diff( void )
 {
     TickType_t tiempo;
 
@@ -120,158 +125,180 @@ TickType_t keys_get_diff( void )
 }
 
 
-void keys_clear_diff( void )
+void clear_diff( void )
 {
     keys_data.time_diff = KEYS_INVALID_TIME;
 }
 
+void productoEscalar32 (uint32_t * vectorIn, uint32_t *vectorOut, uint32_t longitud, uint32_t escalar)
+{char buffer1 [50];
+int i=0;
+
+    vPrintString( "INGRESO A LA FUNCION PRODUCTO \r\n" );
+    vPrintString ("Los valores de: ");
+    sprintf( buffer1, "Longitud = %lu y Escalar = %lu \r\n", longitud,escalar);
+       HAL_UART_Transmit(&huart3, (uint8_t*) buffer1, strlen(buffer1), 1000);
+
+    //muestra los elementos del vectorOut
+    while(i<longitud)
+    {
+    	vectorOut[i]=escalar*vectorIn[i];
+    sprintf( buffer1, "VectorOut [%d] = %lu \r\n", i,vectorOut[i]);
+    HAL_UART_Transmit(&huart3, (uint8_t*) buffer1, strlen(buffer1), 1000);
+    i++;
+    }
+}
+
+
 
 // Implementacion de funcion de la tarea
-void keys_service_task( void* taskParmPtr )
+void task_tecla_led( void* taskParmPtr )
 {
+    // ---------- CONFIGURACIONES ------------------------------
+	char buffer [50];
+	uint32_t vectorIn[10]={1,2,3,4}, *vectorOut;
+		uint32_t longitud=4, escalar=5;
+		int index=0;
+
+
+
+		  //muestra el vector con los valores originales
+		    while(index<longitud)
+		{
+		  if(index==0) vPrintString( "VALORES ORIGINALES DEL VECTOR_IN \r\n" );
+
+		  sprintf( buffer, "VECTOR_IN [%d] = %lu \r\n", index,vectorIn[index]);
+		  HAL_UART_Transmit(&huart3, (uint8_t*) buffer, strlen(buffer), 1000);
+		  index++;
+
+		}
+         productoEscalar32 (vectorIn, &vectorOut,longitud,escalar);
+
+	tecla_led_state_t tecla_led_state = TECLA;
+
+	TickType_t dif;
+
 	keys_data.state          = STATE_BUTTON_UP;  		// Set initial state
     keys_data.time_down      = KEYS_INVALID_TIME;
     keys_data.time_up        = KEYS_INVALID_TIME;
     keys_data.time_diff      = KEYS_INVALID_TIME;
 
-    //vPrintString( "      Task: keys_service_task\r\n" );
+    vPrintString( "      Task: task_tecla_led\r\n" );
 
+	// ---------- REPETIR POR SIEMPRE --------------------------
     while( 1 )
     {
-        switch( keys_data.state )
-        {
-            case STATE_BUTTON_UP:
-                /* CHECK TRANSITION CONDITIONS */
-        		if( HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin) )
-        		{
-                    keys_data.state = STATE_BUTTON_FALLING;
-   ;
-                }
-                break;
+    	if( tecla_led_state == TECLA)
+    	{
+    		switch( keys_data.state )
+    		{
+            	case STATE_BUTTON_UP:
+            		/* CHECK TRANSITION CONDITIONS */
+            		if (HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin))
+            		{
+            			keys_data.state = STATE_BUTTON_FALLING;
+            			vPrintString( "            keys_data.state: STATE_BUTTON_FALLING\r\n" );
+            		}
+            		break;
 
-            case STATE_BUTTON_FALLING:
-                /* ENTRY */
+            	case STATE_BUTTON_FALLING:
+            		/* ENTRY */
 
-                /* CHECK TRANSITION CONDITIONS */
-        		if( HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin) )
+            		/* CHECK TRANSITION CONDITIONS */
+            		if (HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin))
+            		{
+            			keys_data.state = STATE_BUTTON_DOWN;
+            			vPrintString( "            keys_data.state: STATE_BUTTON_DOWN\r\n" );
+
+            			/* ACCION DEL EVENTO !*/
+            			keys_data.time_down = xTaskGetTickCount();
+            		}
+            		else
+            		{
+            			keys_data.state = STATE_BUTTON_UP;
+                    	vPrintString( "            keys_data.state: STATE_BUTTON_UP\r\n" );
+            		}
+
+            		/* LEAVE */
+            		break;
+
+            	case STATE_BUTTON_DOWN:
+            		/* CHECK TRANSITION CONDITIONS */
+            		if (!HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin))
+            		{
+            			keys_data.state = STATE_BUTTON_RISING;
+            			vPrintString( "            keys_data.state: STATE_BUTTON_RISING\r\n" );
+            		}
+            		break;
+
+            	case STATE_BUTTON_RISING:
+            		/* ENTRY */
+
+            		/* CHECK TRANSITION CONDITIONS */
+
+            		if (!HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin))
+            		{
+            			tecla_led_state = LED;
+
+            			keys_data.state = STATE_BUTTON_UP;
+            			vPrintString( "            keys_data.state: STATE_BUTTON_UP\r\n" );
+
+            			/* ACCION DEL EVENTO ! */
+            			keys_data.time_up    = xTaskGetTickCount();
+            			keys_data.time_diff  = keys_data.time_up - keys_data.time_down;
+            		}
+            		else
+            		{
+            			keys_data.state = STATE_BUTTON_DOWN;
+            			vPrintString( "            keys_data.state: STATE_BUTTON_DOWN\r\n" );
+            		}
+
+            		/* LEAVE */
+            		break;
+
+            	default:
+            		keys_data.state = STATE_BUTTON_UP;
+            		vPrintString( "            keys_data.state: STATE_BUTTON_UP\r\n" );
+
+            		break;
+    		}
+    		// Envia la tarea al estado bloqueado durante DEBOUNCE_TIME_MS
+    		vTaskDelay( DEBOUNCE_TIME_MS / portTICK_RATE_MS );
+    	}
+
+    	if( tecla_led_state == LED)
+    	{
+            dif = get_diff();
+
+            if( dif != KEYS_INVALID_TIME )
+            {
+                if( dif > LED_RATE_MS )
                 {
-                    keys_data.state = STATE_BUTTON_DOWN;
-
-                    /* ACCION DEL EVENTO !*/
-                    keys_data.time_down = xTaskGetTickCount();
+                    dif = LED_RATE_MS;
                 }
-                else
-                {
-                    keys_data.state = STATE_BUTTON_UP;
+    			tecla_led_state = TECLA;
 
-                }
+        		sprintf( buffer, "            led_state: Encendido - dif %u\r\n", (unsigned int)dif );
+        		vPrintString( buffer );
+            	HAL_GPIO_WritePin( LD1_GPIO_Port, LD1_Pin, GPIO_PIN_SET );
 
-                /* LEAVE */
-                break;
+                // Envia la tarea al estado bloqueado durante dif
+                vTaskDelay( dif / portTICK_RATE_MS );
 
-            case STATE_BUTTON_DOWN:
-                /* CHECK TRANSITION CONDITIONS */
-        		if( !HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin) )
-                {
-                    keys_data.state = STATE_BUTTON_RISING;
+            	vPrintString( "            led_state: Apagado\r\n" );
+            	HAL_GPIO_WritePin( LD1_GPIO_Port, LD1_Pin, GPIO_PIN_RESET );
 
-                }
-                break;
-
-            case STATE_BUTTON_RISING:
-                /* ENTRY */
-
-                /* CHECK TRANSITION CONDITIONS */
-
-        		if( !HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin) )
-                {
-                    keys_data.state = STATE_BUTTON_UP;
-
-                    /* ACCION DEL EVENTO ! */
-                    keys_data.time_up    = xTaskGetTickCount();
-                    keys_data.time_diff  = keys_data.time_up - keys_data.time_down;
-
-                    if ( keys_data.time_diff  > 0 )
-                    {
-                        xSemaphoreGive( sem_btn );
-                    }
-                }
-                else
-                {
-                    keys_data.state = STATE_BUTTON_DOWN;
-
-                }
-
-                /* LEAVE */
-                break;
-
-            default:
-            	keys_data.state = STATE_BUTTON_UP;
-
-                break;
-        }
-        // Envia la tarea al estado bloqueado durante DEBOUNCE_TIME_MS
-        vTaskDelay( DEBOUNCE_TIME_MS / portTICK_RATE_MS );
+                clear_diff();
+            }
+            else
+            {
+                // Envia la tarea al estado bloqueado durante LED_RATE_MS
+                vTaskDelay( LED_RATE_MS / portTICK_RATE_MS );
+            }
+    	}
     }
 }
 
-
-void tarea_led( void* taskParmPtr )
-{
-    // ---------- CONFIGURACIONES ------------------------------
-	char buffer [50];
-	uint32_t vectorIN[10]={10,20,30,40,50,60},vectorOUT[10]={10,20,30,40,50,60};
-	uint32_t longitud=6,escalar;
-    TickType_t dif;
-int ii=0;
-    while(ii<longitud)
-    {
-    sprintf( buffer, "Elemento %d = %lu de vectorIN\r\n", ii,vectorIN[ii]);
-    HAL_UART_Transmit(&huart3, (uint8_t*) buffer, strlen(buffer), 1000);
-    ii++;
-    }
-
-//    sprintf( buffer,"Este es el vector %lu \r\n",longitud ),//(unsigned int)vector[1]);
-//    HAL_UART_Transmit(&huart3, (uint8_t*) buffer, strlen(buffer), 1000);
-escalar=2;
-
-    while( 1 )
-    {
-
-        vPrintString( " Al presionar el boton muestra el producto escalar\r\n" );
-        xSemaphoreTake( sem_btn, portMAX_DELAY );			// Esperamos tecla
-        producto (vectorIN,vectorOUT,longitud,escalar);
-
-        dif = keys_get_diff();
-        keys_clear_diff();
-
-
-        HAL_GPIO_WritePin( LD1_GPIO_Port, LD1_Pin, GPIO_PIN_SET );
-
-        vTaskDelay( dif / portTICK_RATE_MS );
-
-        HAL_GPIO_WritePin( LD1_GPIO_Port, LD1_Pin, GPIO_PIN_RESET );
-        // Envia la tarea al estado bloqueado durante LED_RATE_MS
-        vTaskDelay( LED_RATE_MS / portTICK_RATE_MS );
-        }
-
-}
-
-
-void producto (uint32_t * vectorIN,uint32_t *vectorOUT, uint32_t longitud, uint32_t escalar)
-{char buffer1 [50];
-int i=0;
-
-    vPrintString( "INGRESO A LA FUNCION PRODUCTO \r\n" );
-    //for(i=0;i<longitud;i++)
-    while(i<longitud)
-    {
-    	vectorOUT[i]= vectorIN[i]*escalar;
-    sprintf( buffer1, "Elemento %d = %lu del producto con escalar=%lu \r\n",i,vectorOUT[i],escalar);
-    HAL_UART_Transmit(&huart3, (uint8_t*) buffer1, strlen(buffer1), 1000);
-    i++;
-    }
-}
 /* USER CODE END 0 */
 
 
@@ -281,94 +308,78 @@ int i=0;
   */
 int main( void )
 {
-	/* USER CODE BEGIN 1 */
+  /* USER CODE BEGIN 1 */
 
-	/* USER CODE END 1 */
+  /* USER CODE END 1 */
 
-	/* MCU Configuration--------------------------------------------------------*/
+  /* MCU Configuration--------------------------------------------------------*/
 
-	/* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-	HAL_Init();
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_Init();
 
-	/* USER CODE BEGIN Init */
+  /* USER CODE BEGIN Init */
 
-	/* USER CODE END Init */
+  /* USER CODE END Init */
 
-	/* Configure the system clock */
-	SystemClock_Config();
+  /* Configure the system clock */
+  SystemClock_Config();
 
-	/* USER CODE BEGIN SysInit */
+  /* USER CODE BEGIN SysInit */
 
-	/* USER CODE END SysInit */
+  /* USER CODE END SysInit */
 
-	/* Initialize all configured peripherals */
-	MX_GPIO_Init();
-	MX_USART3_UART_Init();
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_USART3_UART_Init();
 
-	/* USER CODE BEGIN 2 */
-	vPrintString( "Main: Ejercicio_1.\r\n" );
+  /* USER CODE BEGIN 2 */
+	vPrintString( "Main: Ejercicio 02 -Language C - AdM.\r\n" );
 
-	/* USER CODE END 2 */
+  /* USER CODE END 2 */
 
-	/* Create the thread(s) */
-	/* definition and creation of defaultTask */
-	osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
-	defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
+  /* Create the thread(s) */
+  /* definition and creation of defaultTask */
+  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
+  defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
-	/* USER CODE BEGIN RTOS_THREADS */
-	/* add threads, ... */
+  /* USER CODE BEGIN RTOS_THREADS */
+  /* add threads, ... */
 
-	// Crear tarea en freeRTOS
-	BaseType_t res1 =
-		xTaskCreate(
-			tarea_led,                     	// Funcion de la tarea a ejecutar
-			( const char * )"tarea_led",   	// Nombre de la tarea como String amigable para el usuario
-			configMINIMAL_STACK_SIZE*2,		// Cantidad de stack de la tarea
-			NULL,                        	// Parametros de tarea (words)
-			tskIDLE_PRIORITY+1,         	// Prioridad de la tarea -> Queremos que este un nivel encima de IDLE
-			NULL                     		// Puntero a la tarea creada en el sistema
-		);
-	// Crear tarea en freeRTOS
-	BaseType_t res2 =
-		xTaskCreate(
-			keys_service_task,					// Funcion de la tarea a ejecutar
-			( const char * )"keys_service_task",// Nombre de la tarea como String amigable para el usuario
-			configMINIMAL_STACK_SIZE*2,			// Cantidad de stack de la tarea
-			NULL,								// Parametros de tarea
-			tskIDLE_PRIORITY+1,					// Prioridad de la tarea
-			NULL								// Puntero a la tarea creada en el sistema
-		);
+    // Crear tareas en freeRTOS
+    BaseType_t res =
+    	xTaskCreate (
+              task_tecla_led,					// Funcion de la tarea a ejecutar
+              ( const char * )"task_tecla_led",	// Nombre de la tarea como String amigable para el usuario
+              configMINIMAL_STACK_SIZE*2,		// Cantidad de stack de la tarea
+              NULL,								// Parametros de tarea
+              tskIDLE_PRIORITY+1,				// Prioridad de la tarea
+              NULL								// Puntero a la tarea creada en el sistema
+          );
 
-	// Gestion de errores
-	//if(res == pdFAIL)
-	//{
-	//	gpioWrite( LEDR, ON );
-	//	vPrintString( "Error al crear las tareas.\r\n" );
-	//	while(TRUE);						// VER ESTE LINK: https://pbs.twimg.com/media/BafQje7CcAAN5en.jpg
-	//}
-	configASSERT( res1 == pdPASS && res2 == pdPASS);	// Gestion de errores
+    // Gestion de errores
+    //if(res == pdFAIL)
+    //{
+    //	gpioWrite( LEDR, ON );
+    //	vPrintString( "Error al crear las tareas.\r\n" );
+    //	while(TRUE);						// VER ESTE LINK: https://pbs.twimg.com/media/BafQje7CcAAN5en.jpg
+    //}
+    configASSERT( res == pdPASS);	// gestion de errores
 
-	// Crear semaforo
-	sem_btn = xSemaphoreCreateBinary();
+  /* USER CODE END RTOS_THREADS */
 
-	// Gestion de errores de semaforos
-	configASSERT( sem_btn !=  NULL  );
+  /* Start scheduler */
+  osKernelStart();
 
-	/* USER CODE END RTOS_THREADS */
+  // ---------- REPETIR POR SIEMPRE --------------------------
+  //while( TRUE )
+  //{
+  // Si cae en este while 1 significa que no pudo iniciar el scheduler
+  //}
+  configASSERT( 0 );
 
-	/* Start scheduler */
-	osKernelStart();
-
-	// ---------- REPETIR POR SIEMPRE --------------------------
-	//while( TRUE )
-	//{
-	// Si cae en este while 1 significa que no pudo iniciar el scheduler
-	//}
-	configASSERT( 0 );
-
-	// NO DEBE LLEGAR NUNCA AQUI, debido a que a este programa se ejecuta
-	// directamenteno sobre un microcontroladore y no es llamado por ningun
-	// Sistema Operativo, como en el caso de un programa para PC.
+  // NO DEBE LLEGAR NUNCA AQUI, debido a que a este programa se ejecuta
+  // directamenteno sobre un microcontroladore y no es llamado por ningun
+  // Sistema Operativo, como en el caso de un programa para PC.
 }
 
 
