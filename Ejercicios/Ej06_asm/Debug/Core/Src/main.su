@@ -1,0 +1,10 @@
+../Core/Src/main.c:106:6:vPrintString	16	static
+../Core/Src/main.c:118:12:get_diff	16	static
+../Core/Src/main.c:128:6:clear_diff	4	static
+../Core/Src/main.c:138:6:task_tecla_led	128	static
+../Core/Src/main.c:313:5:main	72	static,ignoring_inline_asm
+../Core/Src/main.c:399:6:SystemClock_Config	88	static
+../Core/Src/main.c:443:13:MX_USART3_UART_Init	8	static
+../Core/Src/main.c:477:13:MX_GPIO_Init	56	static
+../Core/Src/main.c:534:6:StartDefaultTask	16	static
+../Core/Src/main.c:549:6:Error_Handler	4	static,ignoring_inline_asm
